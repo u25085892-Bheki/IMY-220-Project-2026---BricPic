@@ -7,3 +7,5 @@ To Run Frontend:
 cd frontend
 docker build -t bricpic-frontend .
 docker run -p 5173:5173 bricpic-frontend
+
+link to github : https://github.com/u25085892-Bheki/IMY-220-Project-2026---BricPic
