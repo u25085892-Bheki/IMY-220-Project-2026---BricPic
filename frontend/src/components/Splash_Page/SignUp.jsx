@@ -38,7 +38,7 @@ function SignUp() {
     }
 
     try {
-      const response = await fetch("http://localhost:3000/api/signup", {
+      const response = await fetch("http://localhost:3000/api/auth/signup", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -51,7 +51,7 @@ function SignUp() {
         console.log("SignUp successful:", data);
         navigate("/home");
       } else {
-        setError(data.message || "SignUp failed");
+        setError(data.message || data.error || "SignUp failed");
       }
     } catch (err) {
       console.error(err);

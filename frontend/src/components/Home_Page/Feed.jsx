@@ -2,11 +2,6 @@ import { useState } from "react";
 import { dummyPosts } from "../../dummyData";
 import PostPreview from "../General/PostPreview";
 
-/**
- * Feed — Home page coverflow carousel.
- * Shows the active post centered, with left/right neighbouring posts dimmed.
- * Also includes a Feed Swap button (Friends / All toggle) at bottom right.
- */
 function Feed({ filter, searchQuery }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [feedType, setFeedType] = useState(filter || "all");
@@ -26,7 +21,6 @@ function Feed({ filter, searchQuery }) {
   }
 
   const total = posts.length;
-  // Clamp activeIdx in case filtering reduces list size
   const safeIdx = total > 0 ? Math.min(activeIdx, total - 1) : 0;
 
   const prevIdx = (safeIdx - 1 + total) % total;

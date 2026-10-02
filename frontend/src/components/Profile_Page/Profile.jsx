@@ -9,8 +9,20 @@ function Profile({ onEditBioClick }) {
   const [isFriendsOpen, setIsFriendsOpen] = useState(true);
   const [isBioExpanded, setIsBioExpanded] = useState(false);
 
-  const handleLogout = () => {
-    navigate("/");
+  const handleLogout = async () => {
+    try {
+      await fetch("http://localhost:3000/api/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    } catch (err) {
+      console.error("Logout request failed:", err);
+    } finally {
+      localStorage.removeItem("user");
+      navigate("/");
+    }
   };
 
   return (
