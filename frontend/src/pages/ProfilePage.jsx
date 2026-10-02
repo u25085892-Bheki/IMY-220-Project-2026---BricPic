@@ -6,14 +6,24 @@ import UserPosts from "../components/Profile_Page/UserPosts";
 
 function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleProfileUpdated = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
 
   return (
     <div className="profile-page-container app-page">
-      <Navigation />
+      <Navigation key={`nav-${refreshKey}`} />
       <main className="profile-page-layout">
         <div className="profile-left-column">
-          <Profile onEditBioClick={() => setIsEditing(!isEditing)} />
-          {isEditing && <EditProfile onClose={() => setIsEditing(false)} />}
+          <Profile key={`profile-${refreshKey}`} onEditBioClick={() => setIsEditing(!isEditing)} />
+          {isEditing && (
+            <EditProfile
+              onClose={() => setIsEditing(false)}
+              onProfileUpdated={handleProfileUpdated}
+            />
+          )}
         </div>
         <div className="profile-right-column">
           <UserPosts />

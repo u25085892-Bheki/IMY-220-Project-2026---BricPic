@@ -3,10 +3,12 @@ import cors from "cors";
 
 import { connectDB, getDB } from './db.js';
 
+import { ObjectId, ReturnDocument } from "mongodb";
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 const PORT = 3000;
 
@@ -50,7 +52,19 @@ app.post("/api/auth/signup", async (req, res) => {
       pronouns: ""
     });
 
-    res.status(201).json({ message: "User registered successfully", userId: result.insertedId });
+    const newUser = {
+      _id: result.insertedId,
+      username: username.trim(),
+      email: email.trim(),
+      profileImage: "/blank-profile-picturesvg.svg",
+      isAdmin: false,
+      friendRequests: [],
+      friendsList: [],
+      bio: "",
+      pronouns: ""
+    };
+
+    res.status(201).json({ message: "User registered successfully", user: newUser });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -72,7 +86,8 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     if (password === user.password) {
-      return res.status(200).json({ message: "successfully logged in" });
+      const { password: _, ...userWithoutPassword } = user;
+      return res.status(200).json({ message: "successfully logged in", user: userWithoutPassword });
     }
 
   } catch (error) {
@@ -96,8 +111,21 @@ app.post("/api/auth/logout", async (req, res) => {
 // Get user profile by ID (view own or other user's profile)
 app.get("/api/users/:id", async (req, res) => {
   try {
-    // req.params.id: Target user ObjectId
-    res.status(501).json({ message: "Get user profile stub" });
+    const userId = req.params.id;
+
+    if (!ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid ID format" });
+    }
+
+    //convert string param to ObjectID for mongo
+    const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+
+    if (!user) {
+      return res.status(404).json({ error: "user not found" });
+    }
+
+    res.status(200).json(user);
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -106,19 +134,51 @@ app.get("/api/users/:id", async (req, res) => {
 // Edit profile (bio, profileImage, pronouns)
 app.put("/api/users/:id", async (req, res) => {
   try {
-    // req.params.id: User ObjectId to update
-    // req.body: { bio, profileImage, pronouns, username }
-    res.status(501).json({ message: "Edit profile stub" });
+    const userID = req.params.id;
+    const { bio, profileImage, pronouns, username } = req.body;
+
+    if (!ObjectId.isValid(userID)) {
+      return res.status(400).json({ error: "Invalid ID format" });
+    }
+
+    const update = {};
+    if (bio !== undefined) update.bio = bio;
+    if (profileImage !== undefined) update.profileImage = profileImage;
+    if (pronouns !== undefined) update.pronouns = pronouns;
+    if (username !== undefined) update.username = username;
+
+    const result = await userCollection.findOneAndUpdate(
+      { _id: new ObjectId(userID) },
+      { $set: update },
+      { returnDocument: 'after' }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: "user not found" });
+    }
+
+    return res.status(200).json({ message: "Profile updated successfully", result });
+
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete user account (rubric: removes user account from database)
+// Delete user account
 app.delete("/api/users/:id", async (req, res) => {
   try {
-    // req.params.id: User ObjectId to delete
-    res.status(501).json({ message: "Delete account stub" });
+
+    const userID = req.params.id;
+    if (!ObjectId.isValid(userID)) {
+      return res.status(400).json({ error: "Invalid ID format" });
+    }
+    
+    const deletedUser = await User.findByIdAndDelete(userId);
+
+    if(!deletedUser){
+      return res.status(404).json({error: "user not found"});
+    }
+    res.json({ message: 'User deleted successfully', deletedUser });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

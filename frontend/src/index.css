@@ -1433,6 +1433,30 @@ body {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 
+.edit-profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.edit-avatar-preview-img {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--lego-yellow);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: #f3f4f6;
+  flex-shrink: 0;
+}
+
+.edit-file-input {
+  font-size: 13px;
+  color: #374151;
+  max-width: 100%;
+}
+
 .edit-profile-header,
 .edit-post-header {
   display: flex;

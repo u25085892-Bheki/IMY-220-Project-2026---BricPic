@@ -29,6 +29,9 @@ function Login() {
       const data = await response.json();
       if (response.ok) {
         console.log("Login successful:", data);
+        if (data.user) {
+          localStorage.setItem("user", JSON.stringify(data.user));
+        }
         navigate("/home");
       } else {
         setError(data.message || data.error || "Invalid username or password");

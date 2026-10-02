@@ -10,12 +10,12 @@ function ProfilePreview({ user }) {
   return (
     <div className="profile-friend-preview-item">
       <img
-        src={user.avatar || "/blank-profile-picturesvg.svg"}
+        src={user.profileImage || user.avatar || "/blank-profile-picturesvg.svg"}
         alt={user.username}
         className="friend-preview-avatar"
       />
       <Link
-        to={`/profile/${user.id}`}
+        to={`/profile/${user._id || user.id}`}
         className="friend-preview-name"
       >
         {user.username}

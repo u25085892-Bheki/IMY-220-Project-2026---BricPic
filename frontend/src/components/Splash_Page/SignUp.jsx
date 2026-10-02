@@ -49,6 +49,9 @@ function SignUp() {
 
       if (response.ok) {
         console.log("SignUp successful:", data);
+        if (data.user) {
+          localStorage.setItem("user", JSON.stringify(data.user));
+        }
         navigate("/home");
       } else {
         setError(data.message || data.error || "SignUp failed");
