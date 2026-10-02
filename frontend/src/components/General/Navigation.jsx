@@ -33,11 +33,10 @@ function Navigation() {
           <span className="nav-label">PROFILE</span>
         </Link>
         <Link
-          to="/post/1"
+          to="/post"
           className={`nav-item ${path.startsWith("/post") ? "active" : ""}`}
           id="nav-posts"
         >
-         
           <span className="nav-label">POSTS</span>
         </Link>
       </nav>

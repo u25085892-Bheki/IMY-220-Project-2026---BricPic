@@ -1,69 +1,169 @@
-import { useState } from "react";
-import { useParams } from "react-router-dom";
-import { dummyPosts } from "../../dummyData";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import PostImage from "./PostImage";
 import Comments from "./Comments";
 import EditPost from "./EditPost";
 
 function Post() {
   const { id } = useParams();
+  const navigate = useNavigate();
 
-  // Select the requested dummy post, falling back to the first example.
-  const foundPost = dummyPosts.find((p) => p.id === parseInt(id)) || dummyPosts[0];
-
-  const [postData, setPostData] = useState(foundPost);
-  const [likes, setLikes] = useState(foundPost.likes || 0);
+  const [postData, setPostData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [likes, setLikes] = useState(0);
   const [hasLiked, setHasLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  let currentUser = null;
+  try {
+    const stored = localStorage.getItem("user");
+    if (stored) currentUser = JSON.parse(stored);
+  } catch (e) { /* ignore */ }
+
+  // Fetch the post from the real API
+  useEffect(() => {
+    if (!id) return;
+    const fetchPost = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`http://localhost:3000/api/posts/${id}`);
+        const data = await res.json();
+        if (res.ok) {
+          setPostData(data);
+          setLikes(data.likes || 0);
+        } else {
+          setError(data.error || "Post not found.");
+        }
+      } catch (err) {
+        setError("Could not connect to the server.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPost();
+  }, [id]);
 
   const handleLike = () => {
     if (hasLiked) {
-      setLikes(likes - 1);
+      setLikes((l) => l - 1);
       setHasLiked(false);
     } else {
-      setLikes(likes + 1);
+      setLikes((l) => l + 1);
       setHasLiked(true);
     }
   };
 
-  const handleSaveEdits = (updated) => {
-    setPostData({
-      ...postData,
-      title: updated.title,
-      description: updated.description,
-      tags: updated.tags
-    });
+  // PUT /api/posts/:id — update description and/or hastag
+  const handleSaveEdits = async (updated) => {
+    try {
+      const res = await fetch(`http://localhost:3000/api/posts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: updated.description,
+          hastag: updated.hastag,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPostData(data.post);
+      }
+    } catch (err) {
+      console.error("Failed to save edits:", err);
+    }
+    setIsEditing(false);
   };
 
+  // DELETE /api/posts/:id
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this post permanently?")) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/posts/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        navigate(-1); // go back after deletion
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to delete post.");
+      }
+    } catch (err) {
+      alert("Could not connect to the server.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <article className="polaroid-post-card">
+        <p style={{ padding: "2rem", color: "#888" }}>Loading post…</p>
+      </article>
+    );
+  }
+
+  if (error || !postData) {
+    return (
+      <article className="polaroid-post-card">
+        <p style={{ padding: "2rem", color: "#e53e3e" }}>{error || "Post not found."}</p>
+      </article>
+    );
+  }
+
+  const isOwner =
+    currentUser &&
+    postData.userId &&
+    (currentUser._id === postData.userId.toString() ||
+      currentUser._id === postData.userId);
+
   return (
-    <article className="polaroid-post-card" aria-label={`Post: ${postData.title}`}>
-      {/* Wireframe 3: Top Row: Friend "F" Icon, Centered TITLE, Edit SVG Icon */}
+    <article className="polaroid-post-card" aria-label={`Post: ${postData.name}`}>
+      {/* Top Row: title + edit/delete actions (owner only) */}
       <header className="polaroid-header">
-        <div className="polaroid-friend-badge" title="Friend status">
-          F
-        </div>
-        <h2 className="polaroid-title">{postData.title}</h2>
-        <button
-          type="button"
-          className="polaroid-edit-btn"
-          id="post-edit-trigger"
-          onClick={() => setIsEditing(!isEditing)}
-          title="Edit this post"
-          aria-label="Edit post"
-        >
-          {/* Clean SVG edit pencil icon - no emojis */}
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11 4H4C3.44772 4 3 4.44772 3 5V20C3 20.5523 3.44772 21 4 21H19C19.5523 21 20 20.5523 20 20V13" stroke="#111111" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M18.5 2.50001C19.3284 1.67158 20.6716 1.67158 21.5 2.50001C22.3284 3.32844 22.3284 4.67157 21.5 5.50001L12 15L8 16L9 12L18.5 2.50001Z" stroke="#111111" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        <div className="polaroid-friend-badge" title="Post">P</div>
+        <h2 className="polaroid-title">{postData.name}</h2>
+        {isOwner && (
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              type="button"
+              className="polaroid-edit-btn"
+              id="post-edit-trigger"
+              onClick={() => setIsEditing(!isEditing)}
+              title="Edit this post"
+              aria-label="Edit post"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11 4H4C3.44772 4 3 4.44772 3 5V20C3 20.5523 3.44772 21 4 21H19C19.5523 21 20 20.5523 20 20V13" stroke="#111111" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M18.5 2.50001C19.3284 1.67158 20.6716 1.67158 21.5 2.50001C22.3284 3.32844 22.3284 4.67157 21.5 5.50001L12 15L8 16L9 12L18.5 2.50001Z" stroke="#111111" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="polaroid-edit-btn"
+              id="post-delete-btn"
+              onClick={handleDelete}
+              disabled={deleteLoading}
+              title="Delete this post"
+              aria-label="Delete post"
+              style={{ background: "#fee2e2" }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 6H21M8 6V4H16V6M19 6L18 20C18 20.5523 17.5523 21 17 21H7C6.44772 21 6 20.5523 6 20L5 6" stroke="#b91c1c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+        )}
       </header>
 
-      {/* Main Image Frame with bottom-right expand button */}
-      <PostImage src={postData.image} alt={postData.title} />
+      {/* Post Image */}
+      <PostImage src={postData.postImage} alt={postData.name} />
 
-      {/* Wireframe 3: Action Buttons Row (Heart, Speech bubble on left; Bookmark, Share on right) */}
+      {/* Action Buttons */}
       <div className="polaroid-actions-row">
         <div className="polaroid-left-actions">
           <button
@@ -104,12 +204,7 @@ function Post() {
             </svg>
           </button>
 
-          <button
-            type="button"
-            className="action-icon-btn"
-            title="Share"
-            aria-label="Share post"
-          >
+          <button type="button" className="action-icon-btn" title="Share" aria-label="Share post">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M4 12V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V12" stroke="#111111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M16 6L12 2L8 6" stroke="#111111" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -119,32 +214,29 @@ function Post() {
         </div>
       </div>
 
-      {/* Wireframe 3: Italic caption text */}
+      {/* Caption */}
       <p className="polaroid-caption">{postData.description}</p>
 
-      {/* Tags */}
-      {postData.tags && postData.tags.length > 0 && (
+      {/* Hashtag */}
+      {postData.hastag && (
         <div className="polaroid-tags-row">
-          {postData.tags.map((tag, i) => (
-            <span key={i} className="polaroid-tag-badge">{tag}</span>
-          ))}
+          <span className="polaroid-tag-badge">{postData.hastag}</span>
         </div>
       )}
 
-      {/* Conditional Edit Post Form */}
+      {/* Inline Edit Form */}
       {isEditing && (
         <EditPost
-          initialTitle={postData.title}
           initialDescription={postData.description}
-          initialTags={postData.tags}
+          initialHastag={postData.hastag}
           onSave={handleSaveEdits}
           onClose={() => setIsEditing(false)}
         />
       )}
 
-      {/* Comments Section */}
+      {/* Comments */}
       <div className="polaroid-comments-wrapper">
-        <Comments initialComments={postData.comments} />
+        <Comments postId={id} initialComments={postData.comments || []} />
       </div>
     </article>
   );

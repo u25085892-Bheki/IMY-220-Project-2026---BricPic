@@ -146,10 +146,13 @@ function Profile({ onEditBioClick }) {
         </div>
         {isFriendsOpen && (
           <div className="profile-friends-scroll-list">
-            {user.friendsList && user.friendsList.length > 0 ? (
-              user.friendsList.map((friend, idx) => (
-                <ProfilePreview key={friend._id || friend.id || idx} user={friend} />
-              ))
+            {(user.friendsList?.length > 0 || user.friends?.length > 0) ? (
+              (user.friendsList || user.friends).map((friend, idx) => {
+                const friendData = typeof friend === "string" ? { username: friend } : friend;
+                return (
+                  <ProfilePreview key={friendData._id || friendData.id || idx} user={friendData} />
+                );
+              })
             ) : (
               <p style={{ padding: "0.5rem 0", color: "#888", fontSize: "0.9rem" }}>No friends yet</p>
             )}

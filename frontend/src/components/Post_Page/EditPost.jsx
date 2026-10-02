@@ -1,21 +1,27 @@
 import { useState } from "react";
 
-// EditPost stores form values locally and sends the completed edit to its parent.
-function EditPost({ initialTitle = "", initialDescription = "", initialTags = [], onSave, onClose }) {
-  const [title, setTitle] = useState(initialTitle);
+/**
+ * EditPost — inline form for editing a post's description and hashtag.
+ * Calls the parent's onSave({ description, hastag }) which handles the API call.
+ */
+function EditPost({ initialDescription = "", initialHastag = "", onSave, onClose }) {
   const [description, setDescription] = useState(initialDescription);
-  const [tags, setTags] = useState(initialTags ? initialTags.join(" ") : "");
+  const [hastag, setHastag] = useState(initialHastag);
   const [feedback, setFeedback] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (onSave) {
-      onSave({ title, description, tags: tags.split(" ") });
+    if (!description.trim()) {
+      setFeedback("Description is required.");
+      return;
     }
+    setLoading(true);
+    setFeedback("");
+    await onSave({ description: description.trim(), hastag: hastag.trim() });
     setFeedback("Post updated!");
-    setTimeout(() => {
-      if (onClose) onClose();
-    }, 600);
+    setLoading(false);
+    setTimeout(() => { if (onClose) onClose(); }, 600);
   };
 
   return (
@@ -28,19 +34,7 @@ function EditPost({ initialTitle = "", initialDescription = "", initialTags = []
           </button>
         )}
       </div>
-      <form onSubmit={handleSubmit} className="lego-form">
-        <div className="form-field-group">
-          <label htmlFor="edit-post-title-input" className="form-field-label">Title</label>
-          <input
-            type="text"
-            id="edit-post-title-input"
-            className="form-text-input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
-        </div>
-
+      <form onSubmit={handleSubmit} className="lego-form" id="edit-post-form">
         <div className="form-field-group">
           <label htmlFor="edit-post-desc-input" className="form-field-label">Description</label>
           <textarea
@@ -48,30 +42,33 @@ function EditPost({ initialTitle = "", initialDescription = "", initialTags = []
             className="form-text-area"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            rows="2"
+            rows="3"
             required
-          ></textarea>
+            disabled={loading}
+          />
         </div>
 
         <div className="form-field-group">
-          <label htmlFor="edit-post-tags-input" className="form-field-label">Tags</label>
+          <label htmlFor="edit-post-hastag-input" className="form-field-label">Hashtag</label>
           <input
             type="text"
-            id="edit-post-tags-input"
+            id="edit-post-hastag-input"
             className="form-text-input"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
+            value={hastag}
+            onChange={(e) => setHastag(e.target.value)}
+            placeholder="#lego"
+            disabled={loading}
           />
         </div>
 
         {feedback && <p className="form-feedback-message success">{feedback}</p>}
 
         <div className="edit-post-actions">
-          <button type="submit" className="btn-lego-submit">
-            Save
+          <button type="submit" className="btn-lego-submit" id="edit-post-save-btn" disabled={loading}>
+            {loading ? "Saving…" : "Save"}
           </button>
           {onClose && (
-            <button type="button" className="btn-lego-cancel" onClick={onClose}>
+            <button type="button" className="btn-lego-cancel" onClick={onClose} disabled={loading}>
               Cancel
             </button>
           )}
