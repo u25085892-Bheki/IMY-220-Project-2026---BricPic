@@ -1,7 +1,7 @@
 To Run Backend:
 cd backend
 docker build -t bricpic-backend .
-docker run -p 3000:3000 bricpic-backend
+docker run -p 3000:3000 --env-file .env bricpic-backend
 
 To Run Frontend:
 cd frontend
