@@ -16,20 +16,43 @@ function EditProfile({ onClose, onProfileUpdated }) {
   const [message, setMessage] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setIsSuccess(false);
+      setMessage("Selected image is too large (max 10MB).");
+      return;
+    }
+
+    setIsUploading(true);
+    setMessage("Uploading image…");
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      const res = await fetch("http://localhost:3000/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.imageUrl) {
+        setProfileImage(data.imageUrl);
+        setIsSuccess(true);
+        setMessage("Image uploaded!");
+      } else {
         setIsSuccess(false);
-        setMessage("Selected image is too large (max 5MB).");
-        return;
+        setMessage(data.error || "Failed to upload image.");
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfileImage(reader.result);
-      };
-      reader.readAsDataURL(file);
+    } catch (err) {
+      setIsSuccess(false);
+      setMessage("Failed to connect to upload service.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -117,7 +140,7 @@ function EditProfile({ onClose, onProfileUpdated }) {
       <form onSubmit={handleSave} className="lego-form">
         {/* Profile Picture Upload Field */}
         <div className="form-field-group">
-          <label htmlFor="edit-profile-image-file" className="form-field-label">Profile Picture</label>
+          <label htmlFor="edit-profile-image-file" className="form-field-label">Profile Picture (Max 10MB)</label>
           <div className="edit-profile-avatar-row">
             <img
               src={profileImage || "/blank-profile-picturesvg.svg"}
@@ -130,6 +153,7 @@ function EditProfile({ onClose, onProfileUpdated }) {
               accept="image/*"
               className="edit-file-input"
               onChange={handleImageChange}
+              disabled={isUploading}
             />
           </div>
         </div>
@@ -180,11 +204,11 @@ function EditProfile({ onClose, onProfileUpdated }) {
         )}
 
         <div className="edit-profile-buttons">
-          <button type="submit" className="btn-lego-submit" disabled={isSaving}>
+          <button type="submit" className="btn-lego-submit" disabled={isSaving || isUploading}>
             {isSaving ? "Saving..." : "Save Changes"}
           </button>
           {onClose && (
-            <button type="button" className="btn-lego-cancel" onClick={onClose} disabled={isSaving}>
+            <button type="button" className="btn-lego-cancel" onClick={onClose} disabled={isSaving || isUploading}>
               Cancel
             </button>
           )}

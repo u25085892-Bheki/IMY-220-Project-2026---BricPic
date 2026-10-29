@@ -1,14 +1,18 @@
 import { useState } from "react";
 
 /**
- * EditPost — inline form for editing a post's description and hashtag.
- * Calls the parent's onSave({ description, hastag }) which handles the API call.
+ * EditPost — inline form for editing a post's description and multiple hashtags.
+ * Handles hashtag splitting directly.
  */
 function EditPost({ initialDescription = "", initialHastag = "", onSave, onClose }) {
   const [description, setDescription] = useState(initialDescription);
   const [hastag, setHastag] = useState(initialHastag);
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const parsedTags = hastag
+    ? hastag.split(/[,\s]+/).map(t => t.trim()).filter(Boolean).map(t => t.startsWith("#") ? t : `#${t}`)
+    : [];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,7 +22,7 @@ function EditPost({ initialDescription = "", initialHastag = "", onSave, onClose
     }
     setLoading(true);
     setFeedback("");
-    await onSave({ description: description.trim(), hastag: hastag.trim() });
+    await onSave({ description: description.trim(), hastag: parsedTags.join(" ") || hastag.trim() });
     setFeedback("Post updated!");
     setLoading(false);
     setTimeout(() => { if (onClose) onClose(); }, 600);
@@ -49,16 +53,32 @@ function EditPost({ initialDescription = "", initialHastag = "", onSave, onClose
         </div>
 
         <div className="form-field-group">
-          <label htmlFor="edit-post-hastag-input" className="form-field-label">Hashtag</label>
+          <label htmlFor="edit-post-hastag-input" className="form-field-label">Hashtags</label>
           <input
             type="text"
             id="edit-post-hastag-input"
             className="form-text-input"
             value={hastag}
             onChange={(e) => setHastag(e.target.value)}
-            placeholder="#lego"
+            placeholder="#lego #space #starwars"
             disabled={loading}
           />
+          {parsedTags.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+              {parsedTags.map((t, idx) => (
+                <span key={idx} style={{
+                  background: "#f3f4f6",
+                  color: "#374151",
+                  fontSize: "0.75rem",
+                  padding: "2px 8px",
+                  borderRadius: "12px",
+                  fontWeight: 600
+                }}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {feedback && <p className="form-feedback-message success">{feedback}</p>}

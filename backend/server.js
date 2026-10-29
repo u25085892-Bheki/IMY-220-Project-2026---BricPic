@@ -1,14 +1,42 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import multer from "multer";
 
 import { connectDB, getDB } from './db.js';
 
 import { ObjectId, ReturnDocument } from "mongodb";
 const app = express();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
+
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use("/uploads", express.static(uploadDir));
 
 const PORT = 3000;
 
@@ -16,7 +44,26 @@ await connectDB();
 const db = getDB();
 const userCollection = db.collection("users");
 const postCollection = db.collection("posts");
+const albumCollection = db.collection("albums");
 const reportReasonsCollection = db.collection("reportReasons");
+
+// Image upload endpoint (multer, 10MB limit)
+app.post("/api/upload", upload.single("image"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file uploaded" });
+    }
+    const imageUrl = `http://localhost:3000/uploads/${req.file.filename}`;
+    res.status(200).json({
+      message: "Image uploaded successfully",
+      imageUrl,
+      filename: req.file.filename
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -190,7 +237,8 @@ app.put("/api/users/:id", async (req, res) => {
       return res.status(404).json({ error: "user not found" });
     }
 
-    return res.status(200).json({ message: "Profile updated successfully", result });
+    const { password: _pw, ...userWithoutPassword } = result;
+    return res.status(200).json({ message: "Profile updated successfully", user: userWithoutPassword });
 
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -621,8 +669,8 @@ app.post("/api/albums", async (req, res) => {
       name: name.trim(),
       description: (description || "").trim(),
       postslist: [],
-      hashtags: toHashtagArray(hashtags),
-      createdAt: new Date()
+      hashtags: hashtags ? (Array.isArray(hashtags) ? hashtags : String(hashtags).split(/[,s]+/).map(t => t.trim()).filter(Boolean).map(t => t.startsWith("#") ? t : `#${t}`)) : [],
+            createdAt: new Date()
     };
     const result = await albumCollection.insertOne(newAlbum);
     res.status(201).json({ message: "Album created", album: { ...newAlbum, _id: result.insertedId } });
@@ -705,8 +753,8 @@ app.put("/api/albums/:id", async (req, res) => {
     const updates = {};
     if (name !== undefined && name.trim() !== "") updates.name = name.trim();
     if (description !== undefined) updates.description = description.trim();
-    if (hashtags !== undefined) updates.hashtags = toHashtagArray(hashtags);
-    if (Object.keys(updates).length === 0) {
+    if (hashtags !== undefined) updates.hashtags = Array.isArray(hashtags) ? hashtags : String(hashtags).split(/[,s]+/).map(t => t.trim()).filter(Boolean).map(t => t.startsWith("#") ? t : `#${t}`);
+        if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "nothing to update" });
     }
     const updated = await albumCollection.findOneAndUpdate(
@@ -826,6 +874,28 @@ app.get("/api/feed/local/:userId", async (req, res) => {
 // ==========================================
 // 7. ADMIN & REPORT REASONS ENDPOINTS
 // ==========================================
+
+
+// Get report reasons (seeds defaults if empty)
+app.get("/api/reports/reasons", async (req, res) => {
+  try {
+    let reasons = await reportReasonsCollection.find({}).toArray();
+    if (reasons.length === 0) {
+      const defaultReasons = [
+        { reason: "Spam or misleading" },
+        { reason: "Harassment or bullying" },
+        { reason: "Inappropriate or offensive content" },
+        { reason: "Copyright violation" },
+        { reason: "Other" }
+      ];
+      await reportReasonsCollection.insertMany(defaultReasons);
+      reasons = await reportReasonsCollection.find({}).toArray();
+    }
+    res.status(200).json(reasons);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Admin: add a new report reason
 app.post("/api/reports/reasons", async (req, res) => {

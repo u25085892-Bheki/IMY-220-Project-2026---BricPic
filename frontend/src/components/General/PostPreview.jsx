@@ -2,12 +2,20 @@ import { Link } from "react-router-dom";
 
 /**
  * PostPreview — card shown in the Home feed carousel.
- * Handles real post fields from MongoDB: name, postImage, hastag, userId.
+ * Handles hashtags directly without external utils.
  */
 function PostPreview({ post }) {
   if (!post) return null;
 
   const postId = post._id?.toString() || post.id;
+  const authorLink = post.authorName && post.authorName !== "Unknown"
+    ? `/profile/${post.authorName}`
+    : post.userId ? `/profile/${post.userId}` : "#";
+
+  // Split multiple hashtags directly
+  const tags = post.hastag
+    ? (Array.isArray(post.hastag) ? post.hastag : String(post.hastag).split(/[,\s]+/)).filter(Boolean)
+    : [];
 
   return (
     <div className="wireframe-feed-post">
@@ -32,21 +40,20 @@ function PostPreview({ post }) {
               alt="Author"
               className="feed-post-author-avatar"
             />
-            <Link
-              to={post.userId ? `/profile/${post.userId}` : "#"}
-              className="feed-post-author-name"
-            >
+            <Link to={authorLink} className="feed-post-author-name">
               {post.authorName || post.author || "Unknown"}
             </Link>
           </div>
 
-          {/* Hashtag pill */}
-          {post.hastag && (
-            <div className="feed-post-tags-row">
-              <span className="feed-tag-pill">
-                {post.hastag.startsWith("#") ? post.hastag.slice(1) : post.hastag}
-                <span className="feed-tag-close">✕</span>
-              </span>
+          {/* Multiple Hashtags row */}
+          {tags.length > 0 && (
+            <div className="feed-post-tags-row" style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+              {tags.map((tag, idx) => (
+                <span key={idx} className="feed-tag-pill">
+                  {tag.replace(/^#/, "")}
+                  <span className="feed-tag-close">✕</span>
+                </span>
+              ))}
             </div>
           )}
         </div>

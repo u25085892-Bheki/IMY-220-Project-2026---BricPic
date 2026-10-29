@@ -2,10 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import PostPreview from "../General/PostPreview";
 
 /**
- * Feed — fetches from the real API.
- * Global feed: GET /api/feed/global (all posts, newest first)
- * Friends feed: GET /api/feed/local/:userId (user + friends posts)
- * Falls back to global if no user is logged in.
+ * Feed — fetches from the real API, then enriches each post with author username/avatar.
+ * Global feed: GET /api/feed/global
+ * Friends feed: GET /api/feed/local/:userId
  */
 function Feed({ searchQuery }) {
   const [posts, setPosts] = useState([]);
@@ -31,7 +30,24 @@ function Feed({ searchQuery }) {
       const res = await fetch(url);
       const data = await res.json();
       if (res.ok) {
-        setPosts(data);
+        // Collect unique userIds and fetch their info
+        const uniqueIds = [...new Set(data.map(p => p.userId?.toString()).filter(Boolean))];
+        const userResults = await Promise.all(
+          uniqueIds.map(uid =>
+            fetch(`http://localhost:3000/api/users/${uid}`)
+              .then(r => r.json())
+              .catch(() => null)
+          )
+        );
+        const userMap = {};
+        userResults.forEach(u => { if (u?._id) userMap[u._id.toString()] = u; });
+
+        const enriched = data.map(p => ({
+          ...p,
+          authorName: userMap[p.userId?.toString()]?.username || "Unknown",
+          authorAvatar: userMap[p.userId?.toString()]?.profileImage || "/blank-profile-picturesvg.svg",
+        }));
+        setPosts(enriched);
         setActiveIdx(0);
       } else {
         setError(data.error || "Failed to load feed.");
@@ -47,14 +63,15 @@ function Feed({ searchQuery }) {
     fetchFeed();
   }, [fetchFeed]);
 
-  // Client-side search filter across name, description, hastag
+  // Client-side search filter across name, description, hastag, and author username
   const filteredPosts = searchQuery
     ? posts.filter((p) => {
         const q = searchQuery.toLowerCase();
         return (
           (p.name && p.name.toLowerCase().includes(q)) ||
           (p.description && p.description.toLowerCase().includes(q)) ||
-          (p.hastag && p.hastag.toLowerCase().includes(q))
+          (p.hastag && p.hastag.toLowerCase().includes(q)) ||
+          (p.authorName && p.authorName.toLowerCase().includes(q))
         );
       })
     : posts;
@@ -115,7 +132,7 @@ function Feed({ searchQuery }) {
   return (
     <section className="feed-section" aria-label="Post feed">
       <h2 className="feed-title">
-        {feedType === "friends" ? "FRIENDS' POSTS" : "NEW POST"}
+        {feedType === "friends" ? "FRIENDS' POSTS" : "GLOBAL FEED"}
       </h2>
 
       {/* Coverflow Stage */}
@@ -185,7 +202,7 @@ function Feed({ searchQuery }) {
           id="feed-swap-btn"
           className="btn-feed-swap"
           onClick={toggleFeed}
-          title={`Active: ${feedType === "all" ? "Global" : "Friends"}. Click to switch.`}
+          title={`Active: ${feedType === "all" ? "Global Feed" : "Friends' Posts"}. Click to switch.`}
         >
           <img src="/feedSwapButton.svg" alt="Feed Swap Icon" className="feed-swap-icon-img" />
           <span className="feed-swap-label">FEED SWAP</span>

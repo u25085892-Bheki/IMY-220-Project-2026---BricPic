@@ -7,9 +7,14 @@ import UserPosts from "../components/Profile_Page/UserPosts";
 function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [albumRefreshKey, setAlbumRefreshKey] = useState(0);
 
   const handleProfileUpdated = () => {
     setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleAlbumCreated = () => {
+    setAlbumRefreshKey((prev) => prev + 1);
   };
 
   return (
@@ -17,7 +22,11 @@ function ProfilePage() {
       <Navigation key={`nav-${refreshKey}`} />
       <main className="profile-page-layout">
         <div className="profile-left-column">
-          <Profile key={`profile-${refreshKey}`} onEditBioClick={() => setIsEditing(!isEditing)} />
+          <Profile
+            key={`profile-${refreshKey}`}
+            onEditBioClick={() => setIsEditing(!isEditing)}
+            onAlbumCreated={handleAlbumCreated}
+          />
           {isEditing && (
             <EditProfile
               onClose={() => setIsEditing(false)}
@@ -26,7 +35,7 @@ function ProfilePage() {
           )}
         </div>
         <div className="profile-right-column">
-          <UserPosts />
+          <UserPosts refreshKey={albumRefreshKey} />
         </div>
       </main>
     </div>

@@ -2,7 +2,8 @@ import { useState } from "react";
 
 /**
  * CreatePost — Modal form that calls POST /api/posts to persist a new post.
- * Accepts an optional onPostCreated callback so parents can refresh.
+ * Allows uploading images via multer (/api/upload, 10MB limit) or pasting a URL.
+ * Supports multiple hashtags directly.
  */
 function CreatePost({ onPostCreated }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,6 +13,7 @@ function CreatePost({ onPostCreated }) {
   const [hastag, setHastag] = useState("");
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   let currentUser = null;
   try {
@@ -31,6 +33,45 @@ function CreatePost({ onPostCreated }) {
     setIsOpen(false);
     resetForm();
   };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setFeedback("Selected image is too large (max 10MB).");
+      return;
+    }
+
+    setUploading(true);
+    setFeedback("Uploading image…");
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    try {
+      const res = await fetch("http://localhost:3000/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.imageUrl) {
+        setPostImage(data.imageUrl);
+        setFeedback("Image uploaded!");
+      } else {
+        setFeedback(data.error || "Failed to upload image.");
+      }
+    } catch (err) {
+      setFeedback("Failed to connect to image upload service.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Multiple hashtags split directly
+  const parsedTags = hastag
+    ? hastag.split(/[,\s]+/).map(t => t.trim()).filter(Boolean).map(t => t.startsWith("#") ? t : `#${t}`)
+    : [];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -54,7 +95,7 @@ function CreatePost({ onPostCreated }) {
           name: name.trim(),
           description: description.trim(),
           postImage: postImage.trim(),
-          hastag: hastag.trim(),
+          hastag: parsedTags.join(" ") || hastag.trim(),
         }),
       });
 
@@ -121,7 +162,19 @@ function CreatePost({ onPostCreated }) {
               </div>
 
               <div className="form-field-group">
-                <label htmlFor="new-post-image" className="form-field-label">Image URL</label>
+                <label htmlFor="new-post-image-file" className="form-field-label">Upload Image (Max 10MB)</label>
+                <input
+                  type="file"
+                  id="new-post-image-file"
+                  accept="image/*"
+                  className="edit-file-input"
+                  onChange={handleFileUpload}
+                  disabled={loading || uploading}
+                />
+              </div>
+
+              <div className="form-field-group">
+                <label htmlFor="new-post-image" className="form-field-label">Or Image URL</label>
                 <input
                   type="text"
                   id="new-post-image"
@@ -130,9 +183,19 @@ function CreatePost({ onPostCreated }) {
                   value={postImage}
                   onChange={(e) => setPostImage(e.target.value)}
                   required
-                  disabled={loading}
+                  disabled={loading || uploading}
                 />
               </div>
+
+              {postImage && (
+                <div style={{ textAlign: "center", marginBottom: "10px" }}>
+                  <img
+                    src={postImage}
+                    alt="Preview"
+                    style={{ maxHeight: "120px", maxWidth: "100%", borderRadius: "8px", objectFit: "contain" }}
+                  />
+                </div>
+              )}
 
               <div className="form-field-group">
                 <label htmlFor="new-post-desc" className="form-field-label">Description</label>
@@ -149,21 +212,37 @@ function CreatePost({ onPostCreated }) {
               </div>
 
               <div className="form-field-group">
-                <label htmlFor="new-post-tags" className="form-field-label">Hashtag</label>
+                <label htmlFor="new-post-tags" className="form-field-label">Hashtags</label>
                 <input
                   type="text"
                   id="new-post-tags"
                   className="form-text-input"
-                  placeholder="#lego"
+                  placeholder="#lego #space #starwars"
                   value={hastag}
                   onChange={(e) => setHastag(e.target.value)}
                   required
                   disabled={loading}
                 />
+                {parsedTags.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                    {parsedTags.map((t, idx) => (
+                      <span key={idx} style={{
+                        background: "#f3f4f6",
+                        color: "#374151",
+                        fontSize: "0.75rem",
+                        padding: "2px 8px",
+                        borderRadius: "12px",
+                        fontWeight: 600
+                      }}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {feedback && (
-                <p className={`form-feedback-message ${feedback === "Post created!" ? "success" : ""}`}>
+                <p className={`form-feedback-message ${feedback.includes("created") || feedback.includes("uploaded") ? "success" : ""}`}>
                   {feedback}
                 </p>
               )}
@@ -173,7 +252,7 @@ function CreatePost({ onPostCreated }) {
                   type="submit"
                   id="create-post-submit-btn"
                   className="btn-lego-submit"
-                  disabled={loading}
+                  disabled={loading || uploading}
                 >
                   {loading ? "Publishing…" : "Publish"}
                 </button>
