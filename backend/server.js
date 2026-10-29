@@ -223,44 +223,185 @@ app.delete("/api/users/:id", async (req, res) => {
 // Send a friend request
 app.post("/api/users/:id/friend-request", async (req, res) => {
   try {
+    // Receiver comes from the URL, sender comes from the request body
+    const receiverId = req.params.id;
+    // req.body is undefined in Express 5 when no JSON body was sent, so default to {}
+    const { fromUserId } = req.body || {};
+    // 400: ids must exist and be valid ObjectIds (new ObjectId("abc") would throw)
+    if (!fromUserId || !ObjectId.isValid(fromUserId) || !ObjectId.isValid(receiverId)) {
+      return res.status(400).json({ error: "valid fromUserId and user id are required" });
+    }
+    // 400: you can't send a request to yourself
+    if (fromUserId.toString() === receiverId) {
+      return res.status(400).json({ error: "cannot send a friend request to yourself" });
+    }
+    // Look up both users
+    const sender = await userCollection.findOne({ _id: new ObjectId(fromUserId) });
+    const receiver = await userCollection.findOne({ _id: new ObjectId(receiverId) });
+    // 404: either user doesn't exist
+    if (!sender || !receiver) {
+      return res.status(404).json({ error: "user not found" });
+    }
+    // 400: already friends (ids may be stored as ObjectId or string, so compare as strings)
+    const alreadyFriends = (sender.friendsList || []).some(
+      (f) => String(f) === receiverId
+    );
 
-    res.status(501).json({ message: "Send friend request stub" });
+    if (alreadyFriends) {
+      return res.status(400).json({ error: "already friends" });
+    }
+    // 409: a request from this sender is already waiting on the receiver
+    const alreadyRequested = (receiver.friendRequests || []).some(
+      (r) => String(r) === fromUserId.toString()
+    );
+
+    if (alreadyRequested) {
+      return res.status(409).json({ error: "friend request already sent" });
+    }
+    // $addToSet pushes the sender's id into the receiver's friendRequests, and does nothing if that id is already in the arra
+    await userCollection.updateOne(
+
+      { _id: new ObjectId(receiverId) },
+
+      { $addToSet: { friendRequests: new ObjectId(fromUserId) } }
+
+    );
+
+    res.status(200).json({ message: "Friend request sent" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+
 });
 
 // Accept a friend request
 app.put("/api/users/:id/accept-friend", async (req, res) => {
   try {
-
-    res.status(501).json({ message: "Accept friend request stub" });
+    const accepterId = req.params.id;
+    const { fromUserId } = req.body || {};
+    if (!fromUserId || !ObjectId.isValid(fromUserId) || !ObjectId.isValid(accepterId)) {
+      return res.status(400).json({ error: "valid fromUserId and user id are required" });
+    }
+    const accepter = await userCollection.findOne({ _id: new ObjectId(accepterId) });
+    const sender = await userCollection.findOne({ _id: new ObjectId(fromUserId) });
+    if (!accepter || !sender) {
+      return res.status(404).json({ error: "user not found" });
+    }
+    // already friends (compare as strings, ids may be ObjectId or string)
+    if ((accepter.friendsList || []).some((f) => String(f) === fromUserId.toString())) {
+      return res.status(400).json({ error: "already friends" });
+    }
+    // there must be a pending request from the sender
+    if (!(accepter.friendRequests || []).some((r) => String(r) === fromUserId.toString())) {
+      return res.status(400).json({ error: "no friend request from this user" });
+    }
+    // accepter: remove the request and add the sender as a friend
+    await userCollection.updateOne(
+      { _id: new ObjectId(accepterId) },
+      {
+        $pull: { friendRequests: new ObjectId(fromUserId) },
+        $addToSet: { friendsList: new ObjectId(fromUserId) }
+      }
+    );
+    // sender: add the accepter as a friend
+    await userCollection.updateOne(
+      { _id: new ObjectId(fromUserId) },
+      { $addToSet: { friendsList: new ObjectId(accepterId) } }
+    );
+    res.status(200).json({ message: "Friend request accepted" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-
 // Decline a friend request
 app.put("/api/users/:id/decline-friend", async (req, res) => {
   try {
-
-    res.status(501).json({ message: "Decline friend request stub" });
+    const declinerId = req.params.id;
+    const { fromUserId } = req.body || {};
+    if (!fromUserId || !ObjectId.isValid(fromUserId) || !ObjectId.isValid(declinerId)) {
+      return res.status(400).json({ error: "valid fromUserId and user id are required" });
+    }
+    const decliner = await userCollection.findOne({ _id: new ObjectId(declinerId) });
+    if (!decliner) {
+      return res.status(404).json({ error: "user not found" });
+    }
+    // there must be a pending request from the sender to decline
+    if (!(decliner.friendRequests || []).some((r) => String(r) === fromUserId.toString())) {
+      return res.status(400).json({ error: "no friend request from this user" });
+    }
+    // remove the sender's id from the decliner's friendRequests
+    await userCollection.updateOne(
+      { _id: new ObjectId(declinerId) },
+      { $pull: { friendRequests: new ObjectId(fromUserId) } }
+    );
+    res.status(200).json({ message: "Friend request declined" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Unfriend a user
+// Unfriend: remove each user from the other's friendsList
 app.delete("/api/users/:id/unfriend", async (req, res) => {
   try {
-
-    res.status(501).json({ message: "Unfriend stub" });
+    const myId = req.params.id;
+    // DELETE bodies can get dropped, so prefer the query string (?friendId=...)
+    const friendId = req.query.friendId || (req.body || {}).friendId;
+    // 400: ids missing or malformed
+    if (!friendId || !ObjectId.isValid(friendId) || !ObjectId.isValid(myId)) {
+      return res.status(400).json({ error: "valid friendId and user id are required" });
+    }
+    const me = await userCollection.findOne({ _id: new ObjectId(myId) });
+    const friend = await userCollection.findOne({ _id: new ObjectId(friendId) });
+    // 404: either user doesn't exist
+    if (!me || !friend) {
+      return res.status(404).json({ error: "user not found" });
+    }
+    // 400: they aren't friends
+    if (!(me.friendsList || []).some((f) => String(f) === friendId.toString())) {
+      return res.status(400).json({ error: "not friends" });
+    }
+    // pull each user out of the other's friendsList
+    await userCollection.updateOne({ _id: me._id }, { $pull: { friendsList: friend._id } });
+    await userCollection.updateOne({ _id: friend._id }, { $pull: { friendsList: me._id } });
+    res.status(200).json({ message: "Unfriended" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ==========================================
+// Like / unlike a post (toggle)
+app.post("/api/posts/:id/like", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body || {};
+    // 400: ids missing or malformed
+    if (!ObjectId.isValid(id) || !userId || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "valid post id and userId are required" });
+    }
+    const post = await postCollection.findOne({ _id: new ObjectId(id) });
+    // 404: post doesn't exist
+    if (!post) {
+      return res.status(404).json({ error: "post not found" });
+    }
+    const userObjectId = new ObjectId(userId);
+    // has this user already liked it? (likedBy holds ObjectIds, so compare as strings)
+    const hasLiked = (post.likedBy || []).some((u) => String(u) === userId.toString());
+    // already liked -> remove like and subtract 1; otherwise add like and add 1
+    const update = hasLiked
+      ? { $pull: { likedBy: userObjectId }, $inc: { likes: -1 } }
+      : { $addToSet: { likedBy: userObjectId }, $inc: { likes: 1 } };
+    const updated = await postCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      update,
+      { returnDocument: "after" }
+    );
+    res.status(200).json({ likes: updated.likes, hasLiked: !hasLiked });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =========================================
 // 4. POSTS & COMMENTS ENDPOINTS
 // ==========================================
 
@@ -539,6 +680,8 @@ app.get("/api/feed/local/:userId", async (req, res) => {
 // ==========================================
 // 7. ADMIN & REPORT REASONS ENDPOINTS
 // ==========================================
+
+
 
 // Get predefined report reasons
 app.get("/api/reports/reasons", async (req, res) => {
