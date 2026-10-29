@@ -569,7 +569,36 @@ app.post("/api/posts/:id/comments", async (req, res) => {
 // Report a post
 app.post("/api/posts/:id/report", async (req, res) => {
   try {
-    res.status(501).json({ message: "Report post stub" });
+    const { id } = req.params;
+    const { userId, reasonId } = req.body || {};
+    if (!ObjectId.isValid(id) || !userId || !ObjectId.isValid(userId) || !reasonId || !ObjectId.isValid(reasonId)) {
+      return res.status(400).json({ error: "valid post id, userId and reasonId are required" });
+    }
+    const post = await postCollection.findOne({ _id: new ObjectId(id) });
+    if (!post) {
+      return res.status(404).json({ error: "post not found" });
+    }
+    // 400: can't report your own post
+    if (post.userId.toString() === userId.toString()) {
+      return res.status(400).json({ error: "you cannot report your own post" });
+    }
+    const reason = await reportReasonsCollection.findOne({ _id: new ObjectId(reasonId) });
+    if (!reason) {
+      return res.status(404).json({ error: "report reason not found" });
+    }
+    // 409: this user already reported this post
+    if ((post.reports || []).some((r) => String(r.userId) === userId.toString())) {
+      return res.status(409).json({ error: "you already reported this post" });
+    }
+    // store who reported it and why (reason text is copied in so admins can read it directly)
+    const report = {
+      userId: new ObjectId(userId),
+      reasonId: reason._id,
+      reason: reason.reason,
+      createdAt: new Date()
+    };
+    await postCollection.updateOne({ _id: new ObjectId(id) }, { $push: { reports: report } });
+    res.status(201).json({ message: "Post reported", reportCount: (post.reports || []).length + 1 });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
