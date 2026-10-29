@@ -827,31 +827,63 @@ app.get("/api/feed/local/:userId", async (req, res) => {
 // 7. ADMIN & REPORT REASONS ENDPOINTS
 // ==========================================
 
-
-
-// Get predefined report reasons
-app.get("/api/reports/reasons", async (req, res) => {
-  try {
-    const reasons = await reportReasonsCollection.find({}).toArray();
-    res.status(200).json(reasons);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Admin: Add a new report reason
+// Admin: add a new report reason
 app.post("/api/reports/reasons", async (req, res) => {
   try {
-    res.status(501).json({ message: "Add report reason stub" });
+    const { userId, reason } = req.body || {};
+    // 403: only admins
+    if (!(await isAdmin(userId))) {
+      return res.status(403).json({ error: "admins only" });
+    }
+    if (!reason || reason.trim() === "") {
+      return res.status(400).json({ error: "reason is required" });
+    }
+    const newReason = { reason: reason.trim() };
+    const result = await reportReasonsCollection.insertOne(newReason);
+    res.status(201).json({ message: "Reason added", reason: { ...newReason, _id: result.insertedId } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Admin: View all reported posts
+// Admin: list reported posts (most reported first)
 app.get("/api/admin/reports", async (req, res) => {
   try {
-    res.status(501).json({ message: "Admin view reports stub" });
+    if (!(await isAdmin(req.query.userId))) {
+      return res.status(403).json({ error: "admins only" });
+    }
+    // "reports.0 exists" = the reports array has at least one item
+    const posts = await postCollection.find({ "reports.0": { $exists: true } }).toArray();
+    posts.sort((a, b) => b.reports.length - a.reports.length);
+    // look up all the authors' usernames in one query
+    const authorIds = [...new Set(posts.map((p) => p.userId.toString()))].map((i) => new ObjectId(i));
+    const authors = await userCollection
+      .find({ _id: { $in: authorIds } }, { projection: { username: 1 } })
+      .toArray();
+    const nameById = {};
+    authors.forEach((a) => { nameById[a._id.toString()] = a.username; });
+    res.status(200).json(posts.map((p) => ({ ...p, author: nameById[p.userId.toString()] || "Unknown" })));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin: dismiss (clear) all reports on a post
+app.put("/api/admin/reports/:postId/dismiss", async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId } = req.body || {};
+    if (!(await isAdmin(userId))) {
+      return res.status(403).json({ error: "admins only" });
+    }
+    if (!ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: "Invalid post ID format" });
+    }
+    const result = await postCollection.updateOne({ _id: new ObjectId(postId) }, { $set: { reports: [] } });
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: "post not found" });
+    }
+    res.status(200).json({ message: "Reports dismissed" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
