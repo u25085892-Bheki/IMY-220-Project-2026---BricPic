@@ -579,58 +579,175 @@ app.post("/api/posts/:id/report", async (req, res) => {
 // 5. ALBUMS ENDPOINTS
 // ==========================================
 
-// Create a new album
+// Create an album (stored as UserId / postslist / hashtags to match the database)
 app.post("/api/albums", async (req, res) => {
   try {
-    res.status(501).json({ message: "Create album stub" });
+    const { userId, name, description, hashtags } = req.body || {};
+    // 400: need a valid owner and a name
+    if (!userId || !ObjectId.isValid(userId) || !name || name.trim() === "") {
+      return res.status(400).json({ error: "valid userId and name are required" });
+    }
+    const newAlbum = {
+      UserId: new ObjectId(userId),
+      name: name.trim(),
+      description: (description || "").trim(),
+      postslist: [],
+      hashtags: toHashtagArray(hashtags),
+      createdAt: new Date()
+    };
+    const result = await albumCollection.insertOne(newAlbum);
+    res.status(201).json({ message: "Album created", album: { ...newAlbum, _id: result.insertedId } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get single album by ID
+// Get one album with its full posts and owner details
 app.get("/api/albums/:id", async (req, res) => {
   try {
-
-    res.status(501).json({ message: "Get album stub" });
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid album ID format" });
+    }
+    const album = await albumCollection.findOne({ _id: new ObjectId(id) });
+    if (!album) {
+      return res.status(404).json({ error: "album not found" });
+    }
+    // $in = "any post whose _id is in this list"
+    const posts = await postCollection.find({ _id: { $in: album.postslist || [] } }).toArray();
+    const owner = await userCollection.findOne(
+      { _id: album.UserId },
+      { projection: { username: 1, profileImage: 1 } }
+    );
+    res.status(200).json({ ...album, posts, author: owner?.username, authorAvatar: owner?.profileImage });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get all albums belonging to a specific user
+// Get all albums for a user (by ObjectId or username), with a cover image and post count
 app.get("/api/users/:id/albums", async (req, res) => {
   try {
-    res.status(501).json({ message: "Get user albums stub" });
+    const { id } = req.params;
+    let user = null;
+    if (ObjectId.isValid(id)) {
+      user = await userCollection.findOne({ _id: new ObjectId(id) });
+    }
+    if (!user) {
+      user = await userCollection.findOne({ username: id });
+    }
+    if (!user) {
+      return res.status(404).json({ error: "user not found" });
+    }
+    const albums = await albumCollection.find({ UserId: user._id }).sort({ createdAt: -1 }).toArray();
+    // cover = image of the first post in each album
+    const result = await Promise.all(
+      albums.map(async (a) => {
+        const list = a.postslist || [];
+        const cover = list.length > 0
+          ? await postCollection.findOne({ _id: list[0] }, { projection: { postImage: 1 } })
+          : null;
+        return { ...a, postCount: list.length, coverImage: cover?.postImage || null };
+      })
+    );
+    res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Edit album details (name, description, hashtags)
+// Edit album name / description / hashtags (owner only)
 app.put("/api/albums/:id", async (req, res) => {
   try {
-    res.status(501).json({ message: "Edit album stub" });
+    const { id } = req.params;
+    const { userId, name, description, hashtags } = req.body || {};
+    if (!ObjectId.isValid(id) || !userId || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "valid album id and userId are required" });
+    }
+    const album = await albumCollection.findOne({ _id: new ObjectId(id) });
+    if (!album) {
+      return res.status(404).json({ error: "album not found" });
+    }
+    // 403: logged-in user isn't the owner
+    if (album.UserId.toString() !== userId.toString()) {
+      return res.status(403).json({ error: "only the album owner can edit it" });
+    }
+    // only update the fields that were actually sent
+    const updates = {};
+    if (name !== undefined && name.trim() !== "") updates.name = name.trim();
+    if (description !== undefined) updates.description = description.trim();
+    if (hashtags !== undefined) updates.hashtags = toHashtagArray(hashtags);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "nothing to update" });
+    }
+    const updated = await albumCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $set: updates },
+      { returnDocument: "after" }
+    );
+    res.status(200).json({ message: "Album updated", album: updated });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Add or remove posts from an album
+// Add or remove a post from an album (owner only): body { userId, postId, action: "add" | "remove" }
 app.put("/api/albums/:id/posts", async (req, res) => {
   try {
-
-    res.status(501).json({ message: "Update album posts stub" });
+    const { id } = req.params;
+    const { userId, postId, action } = req.body || {};
+    if (!ObjectId.isValid(id) || !userId || !ObjectId.isValid(userId) || !postId || !ObjectId.isValid(postId)) {
+      return res.status(400).json({ error: "valid album id, userId and postId are required" });
+    }
+    if (action !== "add" && action !== "remove") {
+      return res.status(400).json({ error: "action must be 'add' or 'remove'" });
+    }
+    const album = await albumCollection.findOne({ _id: new ObjectId(id) });
+    if (!album) {
+      return res.status(404).json({ error: "album not found" });
+    }
+    if (album.UserId.toString() !== userId.toString()) {
+      return res.status(403).json({ error: "only the album owner can change its posts" });
+    }
+    // when adding, make sure the post exists
+    if (action === "add") {
+      const post = await postCollection.findOne({ _id: new ObjectId(postId) });
+      if (!post) {
+        return res.status(404).json({ error: "post not found" });
+      }
+    }
+    // $addToSet avoids duplicates, $pull removes the id
+    const update = action === "add"
+      ? { $addToSet: { postslist: new ObjectId(postId) } }
+      : { $pull: { postslist: new ObjectId(postId) } };
+    const updated = await albumCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      update,
+      { returnDocument: "after" }
+    );
+    res.status(200).json({ message: "Album posts updated", album: updated });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete an album
+// Delete an album (owner only). The posts inside are not deleted.
 app.delete("/api/albums/:id", async (req, res) => {
   try {
-
-    res.status(501).json({ message: "Delete album stub" });
+    const { id } = req.params;
+    const userId = req.query.userId || (req.body || {}).userId;
+    if (!ObjectId.isValid(id) || !userId || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "valid album id and userId are required" });
+    }
+    const album = await albumCollection.findOne({ _id: new ObjectId(id) });
+    if (!album) {
+      return res.status(404).json({ error: "album not found" });
+    }
+    if (album.UserId.toString() !== userId.toString()) {
+      return res.status(403).json({ error: "only the album owner can delete it" });
+    }
+    await albumCollection.deleteOne({ _id: new ObjectId(id) });
+    res.status(200).json({ message: "Album deleted" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
